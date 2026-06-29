@@ -179,12 +179,29 @@ function detectEmptySlots(weekdays, availability, staffList) {
 }
 
 // ── シフト生成 ─────────────────────────────────────────
-// 全コマ埋め優先: まず上限内で割り当て、埋まらないスロットは上限無視で再試行
+// 全コマ埋め優先 + 午前/午後バランス + 週バランス
 function generateShift(weekdays, availability, staffList, regularTarget) {
   const shift = {};
   weekdays.forEach(d => { shift[dateKey(d)] = { am: null, pm: null }; });
-  const counts = {};
-  staffList.forEach(s => { counts[s.id] = 0; });
+  const counts    = {};  // 総担当回数
+  const amCounts  = {};  // 午前担当回数
+  const pmCounts  = {};  // 午後担当回数
+  // 週番号マップ: dk → weekIndex (0,1,2,...)
+  const weekIndexOf = {};
+  let wi = 0, prevMon = null;
+  weekdays.forEach(d => {
+    const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay()+6)%7));
+    const monKey = mon.toISOString().slice(0,10);
+    if (monKey !== prevMon) { wi++; prevMon = monKey; }
+    weekIndexOf[dateKey(d)] = wi;
+  });
+  const totalWeeks = wi;
+  const weekCounts = {}; // staffId → { weekIndex: count }
+  staffList.forEach(s => {
+    counts[s.id] = 0; amCounts[s.id] = 0; pmCounts[s.id] = 0;
+    weekCounts[s.id] = {};
+    for (let w = 1; w <= totalWeeks; w++) weekCounts[s.id][w] = 0;
+  });
 
   const avail = {};
   staffList.forEach(s => { avail[s.id] = availability[s.id] || {}; });
@@ -192,6 +209,18 @@ function generateShift(weekdays, availability, staffList, regularTarget) {
   const maxFor = (id) => {
     const s = staffList.find(x => x.id === id);
     return s.fixedCount !== undefined && s.fixedCount !== null ? s.fixedCount : regularTarget;
+  };
+
+  // 候補スコア（小さいほど優先）
+  // 優先順位: ①総回数が少ない ②週の回数が少ない ③午前/午後の偏りが大きい方を解消
+  const candidateScore = (s, sl, dk) => {
+    const wk = weekIndexOf[dk];
+    const wCount = weekCounts[s.id][wk] || 0;
+    // 今slotがamなら「pmが多い人優先」（amが少ない人に入れる）
+    const slotBias = sl === "am"
+      ? amCounts[s.id] - pmCounts[s.id]   // 負なら午前が少ない → 優先
+      : pmCounts[s.id] - amCounts[s.id];  // 負なら午後が少ない → 優先
+    return counts[s.id] * 1000 + wCount * 10 + slotBias;
   };
 
   // スロットをランダム順で処理
@@ -202,7 +231,14 @@ function generateShift(weekdays, availability, staffList, regularTarget) {
     [slots[i],slots[j]]=[slots[j],slots[i]];
   }
 
-  // パス1: 上限内で通常割り当て
+  const assign = (s, dk, sl) => {
+    shift[dk][sl] = s.id;
+    counts[s.id]++;
+    if (sl === "am") amCounts[s.id]++; else pmCounts[s.id]++;
+    weekCounts[s.id][weekIndexOf[dk]]++;
+  };
+
+  // パス1: 上限内で割り当て（多段スコア順）
   for (const { dk, sl } of slots) {
     const other = sl === "am" ? "pm" : "am";
     const alreadyToday = shift[dk][other];
@@ -212,14 +248,11 @@ function generateShift(weekdays, availability, staffList, regularTarget) {
         avail[s.id][dk]?.[sl] === true &&
         counts[s.id] < maxFor(s.id)
       )
-      .sort((a,b) => counts[a.id]-counts[b.id]);
-    if (candidates.length > 0) {
-      shift[dk][sl] = candidates[0].id;
-      counts[candidates[0].id]++;
-    }
+      .sort((a,b) => candidateScore(a,sl,dk) - candidateScore(b,sl,dk));
+    if (candidates.length > 0) assign(candidates[0], dk, sl);
   }
 
-  // パス2: 空きコマを上限無視で埋める（午前午後連続NGは維持）
+  // パス2: 空きコマを上限無視で埋める
   for (const { dk, sl } of slots) {
     if (shift[dk][sl] !== null) continue;
     const other = sl === "am" ? "pm" : "am";
@@ -229,15 +262,11 @@ function generateShift(weekdays, availability, staffList, regularTarget) {
         s.id !== alreadyToday &&
         avail[s.id][dk]?.[sl] === true
       )
-      .sort((a,b) => counts[a.id]-counts[b.id]);
-    if (candidates.length > 0) {
-      shift[dk][sl] = candidates[0].id;
-      counts[candidates[0].id]++;
-    }
-    // それでも埋まらない = 誰も○をつけていない → null のまま
+      .sort((a,b) => candidateScore(a,sl,dk) - candidateScore(b,sl,dk));
+    if (candidates.length > 0) assign(candidates[0], dk, sl);
   }
 
-  return { shift, counts };
+  return { shift, counts, amCounts, pmCounts, weekCounts };
 }
 
 function shiftScore(counts, staffList, regularTarget) {
@@ -981,7 +1010,7 @@ export default function ShiftApp() {
         {/* 担当回数サマリー */}
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 14px"}}>
           <p style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>担当回数</p>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:6}}>
             {staffList.map(s=>{
               const isLim = s.role==="limited";
               const target = isLim ? (limitedCounts[s.id]??s.fixedCount) : (regularCounts[s.id] ?? regularTarget ?? 0);
@@ -989,18 +1018,36 @@ export default function ShiftApp() {
               const actual = Object.values(effShift).reduce((a,v)=>{
                 if(v.am===s.id) a++; if(v.pm===s.id) a++; return a;
               }, 0);
+              const amC = effAmCounts[s.id]||0;
+              const pmC = effPmCounts[s.id]||0;
+              const wkC = effWeekCounts[s.id]||{};
+              const wkVals = Object.values(wkC);
+              const wkSpread = wkVals.length>0 ? Math.max(...wkVals)-Math.min(...wkVals) : 0;
               const match = actual === target;
+              const ampmOk = Math.abs(amC-pmC) <= 1;
+              const weekOk = wkSpread <= 1;
               return (
                 <div key={s.id} style={{
-                  display:"flex",alignItems:"center",gap:5,
-                  padding:"5px 11px",borderRadius:20,
+                  padding:"7px 11px",borderRadius:10,
                   background:match?(isLim?C.limitedLight:C.accentLight):"#FEF2F2",
-                  border:`1px solid ${match?(isLim?C.limited:C.accent):"#FECACA"}`,
+                  border:`1.5px solid ${match?(isLim?C.limited:C.accent):"#FECACA"}`,
                 }}>
-                  <span style={{fontSize:12,fontWeight:600,color:C.text}}>{s.name}</span>
-                  <span style={{fontSize:14,fontWeight:800,color:match?(isLim?C.limited:C.accent):C.danger}}>{actual}</span>
-                  <span style={{fontSize:10,color:C.muted}}>/ {target}回</span>
-                  {!match && <span style={{fontSize:10,color:C.danger}}>⚠</span>}
+                  <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.text}}>{s.name}</span>
+                    <span style={{fontSize:14,fontWeight:800,color:match?(isLim?C.limited:C.accent):C.danger}}>{actual}</span>
+                    <span style={{fontSize:10,color:C.muted}}>/{target}回</span>
+                    {!match && <span style={{fontSize:10,color:C.danger}}>⚠</span>}
+                  </div>
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                    <span style={{fontSize:10,padding:"1px 5px",borderRadius:4,
+                      background:ampmOk?C.am:C.dangerBg,color:ampmOk?C.amText:C.danger,fontWeight:600}}>
+                      午前{amC} 午後{pmC}
+                    </span>
+                    <span style={{fontSize:10,padding:"1px 5px",borderRadius:4,
+                      background:weekOk?"#EDE9FE":"#FEF2F2",color:weekOk?"#6D28D9":C.danger,fontWeight:600}}>
+                      週ズレ{wkSpread}
+                    </span>
+                  </div>
                 </div>
               );
             })}
