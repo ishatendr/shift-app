@@ -910,6 +910,26 @@ export default function ShiftApp() {
       if (s.role==="regular"&&regularCounts[s.id]!==undefined) return {...s,fixedCount:regularCounts[s.id]};
       return s;
     });
+
+    // manualShift反映後のam/pm/週カウントを再計算
+    const effAmCounts = {}, effPmCounts = {}, effWeekCounts = {};
+    staffList.forEach(s => { effAmCounts[s.id]=0; effPmCounts[s.id]=0; effWeekCounts[s.id]={}; });
+    if (shift) {
+      let wi2=0, prevM=null;
+      const wkOf = {};
+      weekdays.forEach(d => {
+        const mon=new Date(d); mon.setDate(d.getDate()-((d.getDay()+6)%7));
+        const mk=mon.toISOString().slice(0,10);
+        if(mk!==prevM){wi2++;prevM=mk;}
+        wkOf[dateKey(d)]=wi2;
+      });
+      Object.entries(shift).forEach(([dk,v])=>{
+        const wk=wkOf[dk]||0;
+        if(v.am){ effAmCounts[v.am]=(effAmCounts[v.am]||0)+1; effWeekCounts[v.am]={...effWeekCounts[v.am],[wk]:(effWeekCounts[v.am]?.[wk]||0)+1}; }
+        if(v.pm){ effPmCounts[v.pm]=(effPmCounts[v.pm]||0)+1; effWeekCounts[v.pm]={...effWeekCounts[v.pm],[wk]:(effWeekCounts[v.pm]?.[wk]||0)+1}; }
+      });
+    }
+
     const DOW_LABELS = ["月","火","水","木","金"];
 
     // 手動コマ変更ハンドラ
