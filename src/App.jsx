@@ -1733,6 +1733,17 @@ export default function ShiftApp() {
               background:appMode==="submit"?"#fff":"rgba(255,255,255,0.2)",
               color:appMode==="submit"?"#065F46":"#fff",
             }}>希望提出</button>
+            <button onClick={()=>{
+              if(!window.confirm("保存されたデータをすべてリセットしてアプリを初期状態に戻しますか？
+（スタッフ設定・可能日入力・シフト案がすべて消えます）")) return;
+              localStorage.removeItem(LS_KEY);
+              localStorage.removeItem(LS_SUBMIT_KEY);
+              window.location.reload();
+            }} style={{
+              padding:"4px 10px",borderRadius:20,border:"1px solid rgba(255,255,255,0.4)",
+              cursor:"pointer",fontSize:11,fontWeight:700,
+              background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",
+            }}>リセット</button>
           </div>
         </div>
         <h1 style={{color:"#fff",fontSize:19,fontWeight:700,letterSpacing:"0.03em"}}>
