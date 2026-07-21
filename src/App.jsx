@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // ── スタッフ定義 ────────────────────────────────────────
 const INITIAL_STAFF = [
@@ -302,15 +302,48 @@ function calcRegularTarget(weekdays, staffList) {
 }
 
 // ── メインコンポーネント ────────────────────────────────
+// ── localStorage保存キー ──────────────────────────────────
+const LS_KEY = "shiftApp_v1";
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data;
+  } catch { return null; }
+}
+
+function saveToStorage(data) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
+}
+
 const now = new Date();
 
 export default function ShiftApp() {
-  const [year, setYear]   = useState(now.getMonth()===11 ? now.getFullYear()+1 : now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth()===11 ? 1 : now.getMonth()+2);
-  const [staffList, setStaffList] = useState(INITIAL_STAFF);
+  // localStorage から復元
+  const [year, setYear]   = useState(() => {
+    const s = loadFromStorage();
+    return s?.year ?? (now.getMonth()===11 ? now.getFullYear()+1 : now.getFullYear());
+  });
+  const [month, setMonth] = useState(() => {
+    const s = loadFromStorage();
+    return s?.month ?? (now.getMonth()===11 ? 1 : now.getMonth()+2);
+  });
+  const [staffList, setStaffList] = useState(() => {
+    const s = loadFromStorage();
+    if (!s?.staffList) return INITIAL_STAFF;
+    // fixedCountだけ復元（名前/roleはINITIAL_STAFFから）
+    return INITIAL_STAFF.map(st => {
+      const saved = s.staffList.find(x=>x.id===st.id);
+      return saved ? {...st, fixedCount: saved.fixedCount} : st;
+    });
+  });
   // availability: { staffId: { [dateKey]: { am: bool, pm: bool } } }
   const [availability, setAvailability] = useState(() => {
-    const o = {}; INITIAL_STAFF.forEach(s => { o[s.id]={}; }); return o;
+    const s = loadFromStorage();
+    if (s?.availability) return s.availability;
+    const o = {}; INITIAL_STAFF.forEach(st => { o[st.id]={}; }); return o;
   });
   const [editingStaff, setEditingStaff] = useState(INITIAL_STAFF[0].id);
 
@@ -335,8 +368,14 @@ export default function ShiftApp() {
   const [editingSlot, setEditingSlot] = useState(null);   // 編集中: { dk, sl } | null
 
   // 祝日管理
-  const [removedHolidays, setRemovedHolidays] = useState(new Set());
-  const [addedHolidays, setAddedHolidays]     = useState(new Set());
+  const [removedHolidays, setRemovedHolidays] = useState(() => {
+    const s = loadFromStorage();
+    return new Set(s?.removedHolidays ?? []);
+  });
+  const [addedHolidays, setAddedHolidays] = useState(() => {
+    const s = loadFromStorage();
+    return new Set(s?.addedHolidays ?? []);
+  });
   const [showHolidayPanel, setShowHolidayPanel] = useState(false);
 
   const autoHolidays = getJapaneseHolidays(year);
@@ -346,6 +385,17 @@ export default function ShiftApp() {
   ]);
 
   const { weeks, weekdays } = buildWeekGrid(year, month, holidays);
+
+  // 変更のたびにlocalStorageへ自動保存
+  useEffect(() => {
+    saveToStorage({
+      year, month,
+      staffList: staffList.map(s=>({id:s.id, fixedCount:s.fixedCount})),
+      availability,
+      removedHolidays: [...removedHolidays],
+      addedHolidays:   [...addedHolidays],
+    });
+  }, [year, month, staffList, availability, removedHolidays, addedHolidays]);
 
   const toggleSlot = useCallback((staffId, dk, slot) => {
     setAvailability(prev => {
@@ -450,7 +500,18 @@ export default function ShiftApp() {
             {Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m}</option>)}
           </select>
           <span style={{color:C.muted,fontSize:13}}>月</span>
-          <span style={{marginLeft:"auto",color:C.muted,fontSize:12}}>平日 {weekdays.length}日 / {weekdays.length*2}コマ</span>
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:11,color:"#16A34A",fontWeight:600}}>💾 自動保存中</span>
+            <button onClick={()=>{
+              if(!window.confirm("入力した希望をすべてリセットしますか？")) return;
+              const o={}; staffList.forEach(s=>{o[s.id]={};});
+              setAvailability(o);
+              setRemovedHolidays(new Set());
+              setAddedHolidays(new Set());
+            }} style={{fontSize:11,color:C.danger,background:"none",border:`1px solid ${C.danger}`,borderRadius:6,padding:"3px 8px",cursor:"pointer"}}>
+              リセット
+            </button>
+          </div>
         </div>
 
         {/* 祝日設定パネル */}
