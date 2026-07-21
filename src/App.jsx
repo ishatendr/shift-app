@@ -303,7 +303,24 @@ function calcRegularTarget(weekdays, staffList) {
 
 // ── メインコンポーネント ────────────────────────────────
 // ── localStorage保存キー ──────────────────────────────────
-const LS_KEY = "shiftApp_v1";
+const LS_KEY        = "shiftApp_v1";
+const LS_SUBMIT_KEY = "shiftApp_submissions_v1"; // 希望提出データ
+
+function loadSubmissions() {
+  try { return JSON.parse(localStorage.getItem(LS_SUBMIT_KEY) || "{}"); } catch { return {}; }
+}
+function saveSubmission(staffId, year, month, avail) {
+  const all = loadSubmissions();
+  const key = `${year}-${String(month).padStart(2,"0")}`;
+  all[key] = { ...(all[key]||{}), [staffId]: avail };
+  try { localStorage.setItem(LS_SUBMIT_KEY, JSON.stringify(all)); } catch {}
+}
+function clearSubmissions(year, month) {
+  const all = loadSubmissions();
+  const key = `${year}-${String(month).padStart(2,"0")}`;
+  delete all[key];
+  try { localStorage.setItem(LS_SUBMIT_KEY, JSON.stringify(all)); } catch {}
+}
 
 function loadFromStorage() {
   try {
@@ -346,6 +363,13 @@ export default function ShiftApp() {
     const o = {}; INITIAL_STAFF.forEach(st => { o[st.id]={}; }); return o;
   });
   const [editingStaff, setEditingStaff] = useState(INITIAL_STAFF[0].id);
+
+  // アプリモード: "manager"=管理者 / "submit"=希望提出
+  const [appMode, setAppMode] = useState("manager");
+  // 希望提出モードのstate
+  const [submitStaffId, setSubmitStaffId] = useState(null); // 選択中のスタッフ
+  const [submitAvail, setSubmitAvail] = useState({});        // { dk: {am,pm} }
+  const [submitDone, setSubmitDone] = useState(false);       // 提出完了フラグ
 
   // view: "input" | "adjust" | "result"
   const [view, setView] = useState("input");
@@ -713,6 +737,25 @@ export default function ShiftApp() {
             ))}
           </div>
         </div>
+
+        {/* 希望収集データ読み込みボタン */}
+        {(() => {
+          const subs = loadSubmissions();
+          const key = `${year}-${String(month).padStart(2,"0")}`;
+          const monthSubs = subs[key] || {};
+          const cnt = Object.keys(monthSubs).length;
+          return cnt > 0 ? (
+            <button onClick={loadSubmissionsToAvailability} style={{
+              background:"#F0FDF4",color:"#166534",
+              border:`2px solid #86EFAC`,
+              borderRadius:12,padding:"12px 14px",fontSize:13,fontWeight:700,
+              cursor:"pointer",display:"flex",alignItems:"center",gap:8,
+            }}>
+              <span style={{fontSize:16}}>📥</span>
+              <span>希望提出データを読み込む（{cnt}/{staffList.length}人 提出済み）</span>
+            </button>
+          ) : null;
+        })()}
 
         <button onClick={handleSubmit} style={{
           background:C.accent,color:"#fff",border:"none",
@@ -1173,12 +1216,65 @@ export default function ShiftApp() {
         {/* シフト表（週グリッド） */}
         <div id="shift-print-area">
         <div style={{background:"#fff",fontFamily:"'Hiragino Sans','Noto Sans JP',sans-serif"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,padding:"0 2px"}}>
+          {/* タイトル行 */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,padding:"0 2px"}}>
             <span style={{fontSize:14,fontWeight:700,color:C.text}}>{year}年{month}月 シフト表</span>
             <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
               {staffList.map(s=>{
                 const sc = STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
                 return <span key={s.id} style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:sc.bg,color:sc.text}}>{s.name}</span>;
+              })}
+            </div>
+          </div>
+          {/* 担当回数サマリー（印刷用） */}
+          <div style={{marginBottom:10,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:"#FAFAFA"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+              <span style={{fontSize:11,fontWeight:700,color:C.muted}}>担当回数</span>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {staffList.map(s=>{
+                const sc = STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
+                const isLim = s.role==="limited";
+                const target = isLim ? (limitedCounts[s.id]??s.fixedCount) : (regularCounts[s.id]??regularTarget??0);
+                const effShift2 = getEffectiveShift()||{};
+                const actual = Object.values(effShift2).reduce((a,v)=>{
+                  if(v.am===s.id)a++; if(v.pm===s.id)a++; return a;
+                },0);
+                const amC2 = effAmCounts[s.id]||0;
+                const pmC2 = effPmCounts[s.id]||0;
+                const wkC2 = effWeekCounts[s.id]||{};
+                const wkVals2 = Object.values(wkC2);
+                const wkSpread2 = wkVals2.length>0?Math.max(...wkVals2)-Math.min(...wkVals2):0;
+                const match = actual===target;
+                const ampmOk = Math.abs(amC2-pmC2)<=1;
+                const weekOk = wkSpread2<=1;
+                return (
+                  <div key={s.id} style={{
+                    padding:"5px 9px",borderRadius:8,
+                    background:sc.bg,
+                    border:`1.5px solid ${match?sc.text+"55":"#FECACA"}`,
+                    minWidth:0,
+                  }}>
+                    <div style={{display:"flex",alignItems:"baseline",gap:4}}>
+                      <span style={{fontSize:12,fontWeight:800,color:sc.text}}>{s.name}</span>
+                      <span style={{fontSize:13,fontWeight:800,color:match?sc.text:C.danger}}>{actual}</span>
+                      <span style={{fontSize:9,color:C.muted}}>/{target}回</span>
+                      {!match&&<span style={{fontSize:9,color:C.danger}}>⚠</span>}
+                    </div>
+                    <div style={{display:"flex",gap:3,marginTop:2}}>
+                      <span style={{fontSize:9,padding:"1px 4px",borderRadius:3,
+                        background:ampmOk?"#E8F5E9":"#FEE2E2",
+                        color:ampmOk?"#2E7D32":C.danger,fontWeight:600}}>
+                        前{amC2} 後{pmC2}
+                      </span>
+                      <span style={{fontSize:9,padding:"1px 4px",borderRadius:3,
+                        background:weekOk?"#EDE9FE":"#FEE2E2",
+                        color:weekOk?"#5B21B6":C.danger,fontWeight:600}}>
+                        週ズレ{wkSpread2}
+                      </span>
+                    </div>
+                  </div>
+                );
               })}
             </div>
           </div>
@@ -1268,18 +1364,266 @@ export default function ShiftApp() {
     );
   };
 
+  // ── 希望提出ビュー ──────────────────────────────────────
+  const submitView = () => {
+    const DOW_LABELS = ["月","火","水","木","金"];
+    const submissions = loadSubmissions();
+    const monthKey = `${year}-${String(month).padStart(2,"0")}`;
+    const monthSubs = submissions[monthKey] || {};
+    const submittedIds = Object.keys(monthSubs);
+
+    // 提出完了画面
+    if (submitDone) {
+      return (
+        <div style={{display:"flex",flexDirection:"column",gap:16,alignItems:"center",paddingTop:40}}>
+          <div style={{fontSize:48}}>✅</div>
+          <p style={{fontSize:18,fontWeight:700,color:C.text}}>提出しました！</p>
+          <p style={{fontSize:13,color:C.muted}}>{year}年{month}月の希望が保存されました</p>
+          <button onClick={()=>{setSubmitDone(false);setSubmitStaffId(null);setSubmitAvail({});}}
+            style={{marginTop:8,padding:"12px 28px",borderRadius:12,background:C.accent,color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:"pointer"}}>
+            別の人が入力する
+          </button>
+        </div>
+      );
+    }
+
+    // スタッフ選択画面
+    if (!submitStaffId) {
+      return (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px"}}>
+            <p style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>{year}年{month}月 希望提出状況</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+              {staffList.map(s=>{
+                const done = submittedIds.includes(s.id);
+                const sc = STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
+                return (
+                  <span key={s.id} style={{
+                    padding:"4px 12px",borderRadius:20,fontSize:13,fontWeight:700,
+                    background:done?sc.bg:"#F3F4F6",
+                    color:done?sc.text:C.muted,
+                    border:`1.5px solid ${done?sc.text+"44":C.border}`,
+                  }}>
+                    {done?"✓ ":""}{s.name}
+                  </span>
+                );
+              })}
+            </div>
+            <p style={{fontSize:11,color:C.muted,marginTop:8}}>
+              {submittedIds.length}/{staffList.length}人 提出済み
+            </p>
+          </div>
+
+          <p style={{fontSize:14,fontWeight:700,color:C.text}}>あなたの名前を選んでください</p>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {staffList.map(s=>{
+              const done = submittedIds.includes(s.id);
+              const sc = STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
+              return (
+                <button key={s.id} onClick={()=>{
+                  // 既提出の場合は既存データを読み込む
+                  const existing = monthSubs[s.id] || {};
+                  setSubmitAvail(existing);
+                  setSubmitStaffId(s.id);
+                }} style={{
+                  display:"flex",alignItems:"center",gap:12,
+                  padding:"14px 16px",borderRadius:12,cursor:"pointer",
+                  border:`2px solid ${done?sc.text+"66":C.border}`,
+                  background:done?sc.bg:C.surface,
+                  textAlign:"left",
+                }}>
+                  <span style={{
+                    width:36,height:36,borderRadius:"50%",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    background:sc.bg,border:`2px solid ${sc.text}44`,
+                    fontSize:16,fontWeight:800,color:sc.text,flexShrink:0,
+                  }}>{s.name}</span>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,color:C.text}}>{s.name}</div>
+                    <div style={{fontSize:11,color:done?"#16A34A":C.muted}}>
+                      {done ? `✓ 提出済み（修正も可能）` : "未提出"}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // カレンダー入力画面
+    const staff = staffList.find(s=>s.id===submitStaffId);
+    const sc = STAFF_COLORS[submitStaffId]||{bg:"#eee",text:"#333"};
+    const slotCount = Object.values(submitAvail).reduce((a,v)=>a+(v.am?1:0)+(v.pm?1:0),0);
+
+    const toggleSubmitSlot = (dk, sl) => {
+      setSubmitAvail(prev=>{
+        const cur = prev[dk]||{am:false,pm:false};
+        const next = {...cur,[sl]:!cur[sl]};
+        if(!next.am&&!next.pm){const n={...prev};delete n[dk];return n;}
+        return {...prev,[dk]:next};
+      });
+    };
+
+    const handleSubmit = () => {
+      saveSubmission(submitStaffId, year, month, submitAvail);
+      setSubmitDone(true);
+    };
+
+    return (
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {/* ヘッダー */}
+        <div style={{display:"flex",alignItems:"center",gap:10,
+          background:sc.bg,borderRadius:12,padding:"12px 16px",
+          border:`2px solid ${sc.text}44`}}>
+          <span style={{width:40,height:40,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+            background:"#fff",fontSize:18,fontWeight:800,color:sc.text,flexShrink:0}}>{staff.name}</span>
+          <div>
+            <p style={{fontSize:15,fontWeight:700,color:sc.text}}>{staff.name}さんの希望入力</p>
+            <p style={{fontSize:11,color:sc.text,opacity:.8}}>{year}年{month}月　選択中: {slotCount}コマ</p>
+          </div>
+          <button onClick={()=>{setSubmitStaffId(null);setSubmitAvail({});}}
+            style={{marginLeft:"auto",background:"none",border:`1px solid ${sc.text}44`,borderRadius:8,padding:"5px 10px",cursor:"pointer",fontSize:12,color:sc.text}}>
+            ← 戻る
+          </button>
+        </div>
+
+        {/* 説明 */}
+        <p style={{fontSize:12,color:C.muted}}>
+          出勤できるコマをタップして <span style={{color:sc.text,fontWeight:700}}>○</span> にしてください。もう一度タップで取り消し。
+        </p>
+
+        {/* カレンダー */}
+        <div style={{borderRadius:10,overflow:"hidden",border:`1px solid ${C.border}`}}>
+          <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",background:C.accent}}>
+            <div/>
+            {DOW_LABELS.map(l=>(
+              <div key={l} style={{textAlign:"center",padding:"6px 0",fontSize:12,fontWeight:700,color:"#fff"}}>{l}</div>
+            ))}
+          </div>
+          {weeks.map((week,wi)=>(
+            <div key={wi} style={{borderTop:`2px solid ${C.border}`}}>
+              {/* 日付行 */}
+              <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",background:"#F7F6F3"}}>
+                <div/>
+                {week.map((d,di)=>{
+                  const borderL = di>0?`1px solid ${C.border}`:"none";
+                  if(!d) return <div key={di} style={{background:"#EEECEA",borderLeft:borderL,minHeight:18}}/>;
+                  const dk=dateKey(d);
+                  const isH=holidays.has(dk);
+                  return (
+                    <div key={dk} style={{textAlign:"center",padding:"3px 2px",borderLeft:borderL,
+                      background:isH?"#F0EEE8":"#F7F6F3",fontSize:11,color:isH?"#B0A8A0":C.muted}}>
+                      {fmtDate(d)}{isH&&<span style={{marginLeft:2,fontSize:9,color:C.danger}}>祝</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 午前行 */}
+              <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",borderTop:`1px solid ${C.border}`}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.am}}>
+                  <span style={{fontSize:10,fontWeight:700,color:C.amText}}>午前</span>
+                </div>
+                {week.map((d,di)=>{
+                  const borderL=di>0?`1px solid ${C.border}`:"none";
+                  if(!d) return <div key={di} style={{background:"#EEECEA",borderLeft:borderL}}/>;
+                  const dk=dateKey(d);
+                  if(holidays.has(dk)) return <div key={dk} style={{background:"#F0EEE8",borderLeft:borderL,minHeight:40}}/>;
+                  const on=!!(submitAvail[dk]?.am);
+                  return (
+                    <button key={dk+"-am"} onClick={()=>toggleSubmitSlot(dk,"am")} style={{
+                      minHeight:40,padding:"2px",cursor:"pointer",textAlign:"center",
+                      border:"none",borderLeft:borderL,
+                      background:on?sc.bg:C.surface,
+                      color:on?sc.text:C.muted,
+                      fontWeight:on?700:400,fontSize:14,
+                    }}>{on?"○":"―"}</button>
+                  );
+                })}
+              </div>
+              {/* 午後行 */}
+              <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",borderTop:`1px solid ${C.border}`}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.pm}}>
+                  <span style={{fontSize:10,fontWeight:700,color:C.pmText}}>午後</span>
+                </div>
+                {week.map((d,di)=>{
+                  const borderL=di>0?`1px solid ${C.border}`:"none";
+                  if(!d) return <div key={di} style={{background:"#EEECEA",borderLeft:borderL}}/>;
+                  const dk=dateKey(d);
+                  if(holidays.has(dk)) return <div key={dk} style={{background:"#F0EEE8",borderLeft:borderL,minHeight:40}}/>;
+                  const on=!!(submitAvail[dk]?.pm);
+                  return (
+                    <button key={dk+"-pm"} onClick={()=>toggleSubmitSlot(dk,"pm")} style={{
+                      minHeight:40,padding:"2px",cursor:"pointer",textAlign:"center",
+                      border:"none",borderLeft:borderL,
+                      background:on?sc.bg:wi%2===0?C.bg:C.surface,
+                      color:on?sc.text:C.muted,
+                      fontWeight:on?700:400,fontSize:14,
+                    }}>{on?"○":"―"}</button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={handleSubmit} style={{
+          background:sc.text,color:"#fff",border:"none",
+          borderRadius:12,padding:"15px",fontSize:16,fontWeight:700,
+          cursor:"pointer",letterSpacing:"0.04em",
+        }}>
+          {staff.name}の希望を提出する ✓
+        </button>
+      </div>
+    );
+  };
+
+  // ── 管理者向け希望読み込み ──────────────────────────────
+  const loadSubmissionsToAvailability = () => {
+    const subs = loadSubmissions();
+    const key = `${year}-${String(month).padStart(2,"0")}`;
+    const monthSubs = subs[key];
+    if (!monthSubs || Object.keys(monthSubs).length === 0) {
+      alert("この月の提出データがありません");
+      return;
+    }
+    const newAvail = {};
+    staffList.forEach(s => { newAvail[s.id] = monthSubs[s.id] || {}; });
+    setAvailability(newAvail);
+    alert(`${Object.keys(monthSubs).length}人分の希望を読み込みました`);
+  };
+
   return (
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'Hiragino Sans','Noto Sans JP',sans-serif",paddingBottom:48}}>
-      <div style={{background:C.accent,padding:"15px 20px 11px",marginBottom:18}}>
-        <p style={{color:"rgba(255,255,255,.6)",fontSize:11,marginBottom:2}}>クリニック シフト管理</p>
+      {/* モード切替ヘッダー */}
+      <div style={{background:appMode==="submit"?"#065F46":C.accent,padding:"15px 20px 11px",marginBottom:18}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+          <p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>クリニック シフト管理</p>
+          <div style={{marginLeft:"auto",display:"flex",gap:4}}>
+            <button onClick={()=>{setAppMode("manager");setSubmitStaffId(null);setSubmitAvail({});setSubmitDone(false);}} style={{
+              padding:"4px 10px",borderRadius:20,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
+              background:appMode==="manager"?"#fff":"rgba(255,255,255,0.2)",
+              color:appMode==="manager"?C.accent:"#fff",
+            }}>管理者</button>
+            <button onClick={()=>{setAppMode("submit");setSubmitStaffId(null);setSubmitAvail({});setSubmitDone(false);}} style={{
+              padding:"4px 10px",borderRadius:20,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
+              background:appMode==="submit"?"#fff":"rgba(255,255,255,0.2)",
+              color:appMode==="submit"?"#065F46":"#fff",
+            }}>希望提出</button>
+          </div>
+        </div>
         <h1 style={{color:"#fff",fontSize:19,fontWeight:700,letterSpacing:"0.03em"}}>
-          {view==="input"?"可能日を入力":view==="adjust"?"回数を調整":`${year}年${month}月 シフト`}
+          {appMode==="submit"
+            ? `${year}年${month}月 希望提出`
+            : view==="input"?"可能日を入力":view==="adjust"?"回数を調整":`${year}年${month}月 シフト`}
         </h1>
       </div>
       <div style={{padding:"0 14px",maxWidth:620,margin:"0 auto"}}>
-        {view==="input"  && inputView()}
-        {view==="adjust" && adjustView()}
-        {view==="result" && resultView()}
+        {appMode==="submit" && submitView()}
+        {appMode==="manager" && view==="input"  && inputView()}
+        {appMode==="manager" && view==="adjust" && adjustView()}
+        {appMode==="manager" && view==="result" && resultView()}
       </div>
     </div>
   );
