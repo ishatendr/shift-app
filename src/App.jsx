@@ -351,7 +351,9 @@ export default function ShiftApp() {
   const [staffList, setStaffList] = useState(() => {
     const s = loadFromStorage();
     if (!s?.staffList) return INITIAL_STAFF;
-    // fixedCountだけ復元（名前/roleはINITIAL_STAFFから）
+    // 保存データに name/role があれば完全復元（医者変更対応）
+    if (s.staffList[0]?.name) return s.staffList;
+    // 旧データ互換: fixedCountだけ復元
     return INITIAL_STAFF.map(st => {
       const saved = s.staffList.find(x=>x.id===st.id);
       return saved ? {...st, fixedCount: saved.fixedCount} : st;
@@ -361,7 +363,8 @@ export default function ShiftApp() {
   const [availability, setAvailability] = useState(() => {
     const s = loadFromStorage();
     if (s?.availability) return s.availability;
-    const o = {}; INITIAL_STAFF.forEach(st => { o[st.id]={}; }); return o;
+    const staff = (s?.staffList?.[0]?.name ? s.staffList : null) || INITIAL_STAFF;
+    const o = {}; staff.forEach(st => { o[st.id]={}; }); return o;
   });
   const [editingStaff, setEditingStaff] = useState(INITIAL_STAFF[0].id);
 
@@ -413,6 +416,7 @@ export default function ShiftApp() {
     return new Set(s?.addedHolidays ?? []);
   });
   const [showHolidayPanel, setShowHolidayPanel] = useState(false);
+  const [showStaffPanel, setShowStaffPanel] = useState(false);
 
   const autoHolidays = getJapaneseHolidays(year);
   const holidays = new Set([
@@ -426,7 +430,7 @@ export default function ShiftApp() {
   useEffect(() => {
     saveToStorage({
       year, month,
-      staffList: staffList.map(s=>({id:s.id, fixedCount:s.fixedCount})),
+      staffList: staffList.map(s=>({id:s.id, name:s.name, role:s.role, fixedCount:s.fixedCount})),
       availability,
       removedHolidays: [...removedHolidays],
       addedHolidays:   [...addedHolidays],
@@ -534,7 +538,7 @@ export default function ShiftApp() {
         <div style={{background:C.surface,borderRadius:12,padding:"12px 16px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <span style={{fontWeight:700,fontSize:13,color:C.text}}>対象月</span>
           <select value={year} onChange={e=>setYear(Number(e.target.value))} style={SS}>
-            {[2025,2026,2027].map(y=><option key={y}>{y}</option>)}
+            {Array.from({length:16},(_,i)=>2025+i).map(y=><option key={y}>{y}</option>)}
           </select>
           <span style={{color:C.muted,fontSize:13}}>年</span>
           <select value={month} onChange={e=>setMonth(Number(e.target.value))} style={SS}>
@@ -553,6 +557,71 @@ export default function ShiftApp() {
               リセット
             </button>
           </div>
+        </div>
+
+        {/* スタッフ管理パネル */}
+        <div style={{background:"#F8F4FF",border:`1px solid #D3C5EC`,borderRadius:12}}>
+          <button onClick={()=>setShowStaffPanel(p=>!p)}
+            style={{width:"100%",background:"none",border:"none",padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,textAlign:"left"}}>
+            <span style={{fontSize:13,fontWeight:700,color:C.limited}}>👥 スタッフ管理</span>
+            <span style={{fontSize:11,color:C.muted,marginLeft:4}}>{staffList.length}人</span>
+            <span style={{marginLeft:"auto",fontSize:12,color:C.muted}}>{showStaffPanel?"▲":"▼"}</span>
+          </button>
+          {showStaffPanel && (
+            <div style={{borderTop:`1px solid #D3C5EC`,padding:"12px 16px"}}>
+              <p style={{fontSize:11,color:C.muted,marginBottom:10}}>名前・役割を変更、追加・削除できます。変更は即時保存されます。</p>
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+                {staffList.map((s,idx)=>(
+                  <div key={s.id} style={{display:"flex",alignItems:"center",gap:6,
+                    padding:"8px 10px",borderRadius:8,background:"#fff",border:`1px solid #D3C5EC`}}>
+                    {/* 名前入力 */}
+                    <input value={s.name} onChange={e=>{
+                      const v = e.target.value;
+                      setStaffList(prev=>prev.map(x=>x.id===s.id?{...x,name:v}:x));
+                    }} style={{
+                      width:56,border:`1px solid ${C.border}`,borderRadius:6,
+                      padding:"4px 6px",fontSize:14,fontWeight:700,
+                      color:s.role==="limited"?C.limited:C.accent,
+                      textAlign:"center",background:"#FAFAFA",
+                    }}/>
+                    {/* 役割切替 */}
+                    <button onClick={()=>setStaffList(prev=>prev.map(x=>
+                      x.id===s.id?{...x,role:x.role==="limited"?"regular":"limited"}:x
+                    ))} style={{
+                      fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:20,
+                      border:"none",cursor:"pointer",
+                      background:s.role==="limited"?C.limitedLight:C.accentLight,
+                      color:s.role==="limited"?C.limited:C.accent,
+                    }}>
+                      {s.role==="limited"?"固定":"均等"}
+                    </button>
+                    {/* 削除 */}
+                    <button onClick={()=>{
+                      if(!window.confirm(`${s.name}を削除しますか？`)) return;
+                      setStaffList(prev=>prev.filter(x=>x.id!==s.id));
+                      setAvailability(prev=>{const n={...prev};delete n[s.id];return n;});
+                    }} style={{
+                      marginLeft:"auto",fontSize:11,color:C.danger,background:"none",
+                      border:`1px solid ${C.danger}`,borderRadius:6,padding:"3px 8px",cursor:"pointer",
+                    }}>削除</button>
+                  </div>
+                ))}
+              </div>
+              {/* 新規追加 */}
+              <button onClick={()=>{
+                const name = window.prompt("新しいスタッフの名前を入力してください");
+                if (!name || !name.trim()) return;
+                const newId = "S" + Date.now();
+                const newStaff = {id:newId, name:name.trim(), role:"regular", fixedCount:null};
+                setStaffList(prev=>[...prev, newStaff]);
+                setAvailability(prev=>({...prev,[newId]:{}}));
+              }} style={{
+                width:"100%",padding:"10px",borderRadius:8,cursor:"pointer",
+                border:`2px dashed #D3C5EC`,background:"#fff",
+                fontSize:13,fontWeight:700,color:C.limited,
+              }}>＋ スタッフを追加</button>
+            </div>
+          )}
         </div>
 
         {/* 祝日設定パネル */}
