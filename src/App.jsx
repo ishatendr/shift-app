@@ -13,6 +13,19 @@ const INITIAL_STAFF = [
   { id: "I", name: "藤",     role: "regular" },
 ];
 
+// スタッフごとの個人カラー（背景・文字）
+const STAFF_COLORS = {
+  A: { bg: "#DBEAFE", text: "#1D4ED8" }, // 青
+  B: { bg: "#FCE7F3", text: "#9D174D" }, // ピンク
+  C: { bg: "#D1FAE5", text: "#065F46" }, // 緑
+  D: { bg: "#FEF3C7", text: "#92400E" }, // 黄
+  E: { bg: "#EDE9FE", text: "#5B21B6" }, // 紫
+  F: { bg: "#FFE4E6", text: "#9F1239" }, // 赤
+  G: { bg: "#ECFDF5", text: "#064E3B" }, // エメラルド
+  H: { bg: "#FFF7ED", text: "#C2410C" }, // オレンジ
+  I: { bg: "#F0F9FF", text: "#0369A1" }, // 空
+};
+
 const NUM_PATTERNS = 3;
 const SLOTS = ["am", "pm"];
 
@@ -990,18 +1003,40 @@ export default function ShiftApp() {
       );
     };
 
+    const handlePrint = () => window.print();
+
     return (
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <style>{`
+          @media print {
+            @page { size: A4 landscape; margin: 10mm; }
+            body * { visibility: hidden; }
+            #shift-print-area, #shift-print-area * { visibility: visible; }
+            #shift-print-area {
+              position: fixed; top: 0; left: 0;
+              width: 100%; height: 100%;
+              padding: 0; margin: 0;
+            }
+            .no-print { display: none !important; }
+          }
+        `}</style>
         {editingSlot && <EditPopup dk={editingSlot.dk} sl={editingSlot.sl}/>}
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div className="no-print" style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setView("adjust")} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",cursor:"pointer",color:C.muted,fontSize:12}}>← 戻る</button>
           <span style={{fontWeight:700,fontSize:15,color:C.text}}>{year}年{month}月 シフト案</span>
-          {manualShift && Object.keys(manualShift).length>0 && (
-            <button onClick={()=>{setManualShift(null);setEditingSlot(null);}} style={{
-              marginLeft:"auto",fontSize:11,color:C.muted,background:"none",
-              border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",cursor:"pointer",
-            }}>手動変更をリセット</button>
-          )}
+          <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+            {manualShift && Object.keys(manualShift).length>0 && (
+              <button onClick={()=>{setManualShift(null);setEditingSlot(null);}} style={{
+                fontSize:11,color:C.muted,background:"none",
+                border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",cursor:"pointer",
+              }}>手動変更をリセット</button>
+            )}
+            <button onClick={handlePrint} style={{
+              fontSize:12,fontWeight:700,color:"#fff",
+              background:C.accent,border:"none",
+              borderRadius:8,padding:"6px 14px",cursor:"pointer",
+            }}>🖨 印刷</button>
+          </div>
         </div>
 
         {/* パターン切替 */}
@@ -1075,6 +1110,18 @@ export default function ShiftApp() {
         </div>
 
         {/* シフト表（週グリッド） */}
+        <div id="shift-print-area">
+        <div style={{background:"#fff",fontFamily:"'Hiragino Sans','Noto Sans JP',sans-serif"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,padding:"0 2px"}}>
+            <span style={{fontSize:14,fontWeight:700,color:C.text}}>{year}年{month}月 シフト表</span>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+              {staffList.map(s=>{
+                const sc = STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
+                return <span key={s.id} style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:sc.bg,color:sc.text}}>{s.name}</span>;
+              })}
+            </div>
+          </div>
+        </div>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
           {/* 曜日ヘッダー */}
           <div style={{display:"grid",gridTemplateColumns:"60px repeat(5,1fr)",background:C.accent,color:"#fff",fontSize:12,fontWeight:700}}>
@@ -1100,6 +1147,7 @@ export default function ShiftApp() {
                   );
                   const staffId = shift[dk]?.am;
                   const isManual = manualShift?.[dk]?.am !== undefined;
+                  const amColor = staffId ? (STAFF_COLORS[staffId]||{bg:C.am,text:C.amText}) : null;
                   return (
                     <div key={dk} onClick={()=>setEditingSlot({dk,sl:"am"})}
                       style={{padding:"6px 4px",textAlign:"center",borderLeft:borderL,
@@ -1108,10 +1156,10 @@ export default function ShiftApp() {
                       <div style={{fontSize:10,color:C.muted,marginBottom:2}}>{fmtDate(d)}</div>
                       {staffId
                         ? <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,
-                            background:isManual?"#FEF9C3":C.am,
-                            color:isManual?"#854D0E":C.amText,
+                            background:isManual?"#FEF9C3":amColor.bg,
+                            color:isManual?"#854D0E":amColor.text,
                             fontWeight:700,fontSize:12,
-                            textDecoration:isManual?"underline":"none"}}>
+                            outline:isManual?`1px solid #D97706`:"none"}}>
                             {getName(staffId)}{isManual?"✎":""}
                           </span>
                         : <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,background:C.dangerBg,color:C.danger,fontWeight:700,fontSize:11}}>空き</span>}
@@ -1132,6 +1180,7 @@ export default function ShiftApp() {
                   );
                   const staffId = shift[dk]?.pm;
                   const isManualPm = manualShift?.[dk]?.pm !== undefined;
+                  const pmColor = staffId ? (STAFF_COLORS[staffId]||{bg:C.pm,text:C.pmText}) : null;
                   return (
                     <div key={dk} onClick={()=>setEditingSlot({dk,sl:"pm"})}
                       style={{padding:"6px 4px",textAlign:"center",borderLeft:borderL,
@@ -1139,9 +1188,10 @@ export default function ShiftApp() {
                         outline:editingSlot?.dk===dk&&editingSlot?.sl==="pm"?`2px solid ${C.accent}`:"none"}}>
                       {staffId
                         ? <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,
-                            background:isManualPm?"#FEF9C3":C.pm,
-                            color:isManualPm?"#854D0E":C.pmText,
-                            fontWeight:700,fontSize:12}}>
+                            background:isManualPm?"#FEF9C3":pmColor.bg,
+                            color:isManualPm?"#854D0E":pmColor.text,
+                            fontWeight:700,fontSize:12,
+                            outline:isManualPm?`1px solid #D97706`:"none"}}>
                             {getName(staffId)}{isManualPm?"✎":""}
                           </span>
                         : <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,background:C.dangerBg,color:C.danger,fontWeight:700,fontSize:11}}>空き</span>}
@@ -1152,6 +1202,7 @@ export default function ShiftApp() {
             </div>
           ))}
         </div>
+        </div> {/* end shift-print-area */}
       </div>
     );
   };
