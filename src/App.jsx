@@ -39,7 +39,7 @@ function nthMonday(year, month, n) {
   }
 }
 
-function dateKey(date) { return date.toISOString().slice(0, 10); }
+function dateKey(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
 
 function getJapaneseHolidays(year) {
   const holidays = new Set();
@@ -83,7 +83,8 @@ function getJapaneseHolidays(year) {
   const sorted = [...holidays].sort();
   const extras = new Set();
   for (const dk of sorted) {
-    const d = new Date(dk + "T00:00:00");
+    const [yy,mm,dd] = dk.split("-").map(Number);
+    const d = new Date(yy, mm-1, dd);
     const prev = new Date(d); prev.setDate(d.getDate()-1);
     const next = new Date(d); next.setDate(d.getDate()+1);
     if (d.getDay() !== 0 && d.getDay() !== 6 && !holidays.has(dateKey(d))) {
@@ -380,15 +381,26 @@ export default function ShiftApp() {
   const [regularExtra, setRegularExtra] = useState(0);      // base+1になる人数
   const [regularCounts, setRegularCounts] = useState({});   // { staffId: count }
   const [limitedCounts, setLimitedCounts] = useState(() => {
-    const o = {}; INITIAL_STAFF.filter(s=>s.role==="limited").forEach(s=>{ o[s.id]=s.fixedCount; }); return o;
+    const s = loadFromStorage();
+    if (s?.limitedCounts) return s.limitedCounts;
+    const o = {}; INITIAL_STAFF.filter(st=>st.role==="limited").forEach(st=>{ o[st.id]=st.fixedCount; }); return o;
   }); // 2画面目で設定する limited の回数
 
   // result state
-  const [patterns, setPatterns] = useState(null);
-  const [selPattern, setSelPattern] = useState(0);
+  const [patterns, setPatterns] = useState(() => {
+    const s = loadFromStorage();
+    return s?.patterns ?? null;
+  });
+  const [selPattern, setSelPattern] = useState(() => {
+    const s = loadFromStorage();
+    return s?.selPattern ?? 0;
+  });
 
   // 手動シフト編集
-  const [manualShift, setManualShift] = useState(null);   // 手動上書き: { dk: { am, pm } }
+  const [manualShift, setManualShift] = useState(() => {
+    const s = loadFromStorage();
+    return s?.manualShift ?? null;
+  }); // 手動上書き: { dk: { am, pm } }
   const [editingSlot, setEditingSlot] = useState(null);   // 編集中: { dk, sl } | null
 
   // 祝日管理
@@ -418,8 +430,13 @@ export default function ShiftApp() {
       availability,
       removedHolidays: [...removedHolidays],
       addedHolidays:   [...addedHolidays],
+      patterns,
+      selPattern,
+      manualShift,
+      limitedCounts,
     });
-  }, [year, month, staffList, availability, removedHolidays, addedHolidays]);
+  }, [year, month, staffList, availability, removedHolidays, addedHolidays,
+      patterns, selPattern, manualShift, limitedCounts]);
 
   const toggleSlot = useCallback((staffId, dk, slot) => {
     setAvailability(prev => {
@@ -756,6 +773,19 @@ export default function ShiftApp() {
             </button>
           ) : null;
         })()}
+
+        {/* 前回のシフト案を復元 */}
+        {patterns && (
+          <button onClick={()=>setView("result")} style={{
+            background:"#F0F9FF",color:"#0369A1",
+            border:`2px solid #BAE6FD`,
+            borderRadius:12,padding:"12px 14px",fontSize:13,fontWeight:700,
+            cursor:"pointer",display:"flex",alignItems:"center",gap:8,
+          }}>
+            <span style={{fontSize:16}}>📋</span>
+            <span>前回のシフト案を表示する（保存済み）</span>
+          </button>
+        )}
 
         <button onClick={handleSubmit} style={{
           background:C.accent,color:"#fff",border:"none",
@@ -1128,7 +1158,8 @@ export default function ShiftApp() {
         <div className="no-print" style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setView("adjust")} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",cursor:"pointer",color:C.muted,fontSize:12}}>← 戻る</button>
           <span style={{fontWeight:700,fontSize:15,color:C.text}}>{year}年{month}月 シフト案</span>
-          <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+          <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
+            <span style={{fontSize:11,color:"#16A34A",fontWeight:600}}>💾 保存済み</span>
             {manualShift && Object.keys(manualShift).length>0 && (
               <button onClick={()=>{setManualShift(null);setEditingSlot(null);}} style={{
                 fontSize:11,color:C.muted,background:"none",
@@ -1489,10 +1520,32 @@ export default function ShiftApp() {
           </button>
         </div>
 
-        {/* 説明 */}
-        <p style={{fontSize:12,color:C.muted}}>
-          出勤できるコマをタップして <span style={{color:sc.text,fontWeight:700}}>○</span> にしてください。もう一度タップで取り消し。
-        </p>
+        {/* コマ数カウンター */}
+        {(() => {
+          const amCount = Object.values(submitAvail).filter(v=>v.am).length;
+          const pmCount = Object.values(submitAvail).filter(v=>v.pm).length;
+          return (
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:12,color:C.muted}}>
+                出勤できるコマをタップして <span style={{color:sc.text,fontWeight:700}}>○</span> に
+              </span>
+              <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+                <span style={{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:20,
+                  background:C.am,color:C.amText}}>
+                  午前 {amCount}コマ
+                </span>
+                <span style={{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:20,
+                  background:C.pm,color:C.pmText}}>
+                  午後 {pmCount}コマ
+                </span>
+                <span style={{fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:20,
+                  background:sc.bg,color:sc.text}}>
+                  計 {amCount+pmCount}コマ
+                </span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* カレンダー */}
         <div style={{borderRadius:10,overflow:"hidden",border:`1px solid ${C.border}`}}>
