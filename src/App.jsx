@@ -1734,8 +1734,7 @@ export default function ShiftApp() {
               color:appMode==="submit"?"#065F46":"#fff",
             }}>希望提出</button>
             <button onClick={()=>{
-              if(!window.confirm("保存されたデータをすべてリセットしてアプリを初期状態に戻しますか？
-（スタッフ設定・可能日入力・シフト案がすべて消えます）")) return;
+              if(!window.confirm("保存されたデータをすべてリセットしてアプリを初期状態に戻しますか？\n（スタッフ設定・可能日入力・シフト案がすべて消えます）")) return;
               localStorage.removeItem(LS_KEY);
               localStorage.removeItem(LS_SUBMIT_KEY);
               window.location.reload();
