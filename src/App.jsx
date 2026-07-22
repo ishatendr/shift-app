@@ -1222,21 +1222,28 @@ export default function ShiftApp() {
       );
     };
 
-    // HTMLコンテンツを新しいウィンドウで印刷するユーティリティ
+    // iframeを使った印刷（ポップアップブロック不要）
     const printHTML = (innerHtml, title) => {
-      const w = window.open("", "_blank", "width=900,height=700");
-      w.document.write(`<!DOCTYPE html><html><head>
+      let iframe = document.getElementById("__print_iframe__");
+      if (!iframe) {
+        iframe = document.createElement("iframe");
+        iframe.id = "__print_iframe__";
+        iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;";
+        document.body.appendChild(iframe);
+      }
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      doc.write(`<!DOCTYPE html><html><head>
         <meta charset="UTF-8"/>
         <title>${title}</title>
         <style>
           @page { size: A4 landscape; margin: 10mm; }
-          body { font-family: 'Hiragino Sans','Noto Sans JP',sans-serif; margin: 0; padding: 0; }
-          * { box-sizing: border-box; }
+          body { font-family: 'Hiragino Sans','Noto Sans JP',sans-serif; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+          * { box-sizing:border-box; }
         </style>
       </head><body>${innerHtml}</body></html>`);
-      w.document.close();
-      w.focus();
-      setTimeout(() => { w.print(); w.close(); }, 400);
+      doc.close();
+      setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); }, 400);
     };
 
     const handlePrint = () => {
