@@ -1222,34 +1222,31 @@ export default function ShiftApp() {
       );
     };
 
-    const handlePrint = () => window.print();
+    // HTMLコンテンツを新しいウィンドウで印刷するユーティリティ
+    const printHTML = (innerHtml, title) => {
+      const w = window.open("", "_blank", "width=900,height=700");
+      w.document.write(`<!DOCTYPE html><html><head>
+        <meta charset="UTF-8"/>
+        <title>${title}</title>
+        <style>
+          @page { size: A4 landscape; margin: 10mm; }
+          body { font-family: 'Hiragino Sans','Noto Sans JP',sans-serif; margin: 0; padding: 0; }
+          * { box-sizing: border-box; }
+        </style>
+      </head><body>${innerHtml}</body></html>`);
+      w.document.close();
+      w.focus();
+      setTimeout(() => { w.print(); w.close(); }, 400);
+    };
+
+    const handlePrint = () => {
+      const el = document.getElementById("shift-print-area");
+      if (el) printHTML(el.innerHTML, `${year}年${month}月シフト表`);
+    };
 
     return (
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <style>{`
-          @media print {
-            @page { size: A4 landscape; margin: 10mm; }
-            body * { visibility: hidden; }
-            #shift-print-area, #shift-print-area * { visibility: visible; }
-            #shift-print-area {
-              position: fixed; top: 0; left: 0;
-              width: 100%; height: 100%;
-              padding: 0; margin: 0;
-            }
-            .no-print { display: none !important; }
-            .staff-badge {
-              background: var(--print-bg) !important;
-              color: var(--print-color) !important;
-              outline: none !important;
-            }
-            #submit-cal-print, #submit-cal-print * { visibility: visible; }
-            #submit-cal-print {
-              position: fixed; top: 0; left: 0;
-              width: 100%; height: 100%;
-              padding: 0; margin: 0;
-            }
-          }
-        `}</style>
+
         {editingSlot && <EditPopup dk={editingSlot.dk} sl={editingSlot.sl}/>}
         <div className="no-print" style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setView("adjust")} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 12px",cursor:"pointer",color:C.muted,fontSize:12}}>← 戻る</button>
@@ -1555,10 +1552,7 @@ export default function ShiftApp() {
           {/* 希望状況カレンダー印刷ボタン */}
           <button onClick={()=>{
             const el = document.getElementById("submit-cal-print");
-            if(!el) return;
-            el.style.display="block";
-            window.print();
-            setTimeout(()=>{ el.style.display="none"; },500);
+            if(el) printHTML(el.innerHTML, `${year}年${month}月希望状況`);
           }} style={{
             display:"flex",alignItems:"center",gap:8,
             padding:"10px 14px",borderRadius:10,cursor:"pointer",
