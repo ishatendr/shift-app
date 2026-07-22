@@ -1221,7 +1221,14 @@ export default function ShiftApp() {
               padding: 0; margin: 0;
             }
             .no-print { display: none !important; }
+            .staff-badge {
+              background: var(--print-bg) !important;
+              color: var(--print-color) !important;
+              outline: none !important;
+            }
+            #avail-print-area { display: block !important; }
           }
+          #avail-print-area { display: none; }
         `}</style>
         {editingSlot && <EditPopup dk={editingSlot.dk} sl={editingSlot.sl}/>}
         <div className="no-print" style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -1235,11 +1242,25 @@ export default function ShiftApp() {
                 border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 10px",cursor:"pointer",
               }}>手動変更をリセット</button>
             )}
-            <button onClick={handlePrint} style={{
+            <button onClick={()=>{
+              // シフト表のみ印刷
+              document.getElementById("avail-print-area").style.display="none";
+              window.print();
+            }} style={{
               fontSize:12,fontWeight:700,color:"#fff",
               background:C.accent,border:"none",
-              borderRadius:8,padding:"6px 14px",cursor:"pointer",
-            }}>🖨 印刷</button>
+              borderRadius:8,padding:"6px 12px",cursor:"pointer",
+            }}>🖨 シフト表</button>
+            <button onClick={()=>{
+              // 希望状況も一緒に印刷
+              document.getElementById("avail-print-area").style.display="block";
+              window.print();
+              setTimeout(()=>{ document.getElementById("avail-print-area").style.display="none"; },500);
+            }} style={{
+              fontSize:12,fontWeight:700,color:C.accent,
+              background:C.accentLight,border:`1px solid ${C.accent}`,
+              borderRadius:8,padding:"6px 12px",cursor:"pointer",
+            }}>🖨 ＋希望状況</button>
           </div>
         </div>
 
@@ -1412,11 +1433,13 @@ export default function ShiftApp() {
                         outline:editingSlot?.dk===dk&&editingSlot?.sl==="am"?`2px solid ${C.accent}`:"none"}}>
                       <div style={{fontSize:10,color:C.muted,marginBottom:2}}>{fmtDate(d)}</div>
                       {staffId
-                        ? <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,
+                        ? <span className="staff-badge" style={{display:"inline-block",padding:"2px 8px",borderRadius:6,
                             background:isManual?"#FEF9C3":amColor.bg,
                             color:isManual?"#854D0E":amColor.text,
                             fontWeight:700,fontSize:12,
-                            outline:isManual?`1px solid #D97706`:"none"}}>
+                            outline:isManual?`1px solid #D97706`:"none",
+                            "--print-bg":amColor.bg, "--print-color":amColor.text,
+                          }}>
                             {getName(staffId)}{isManual?"✎":""}
                           </span>
                         : <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,background:C.dangerBg,color:C.danger,fontWeight:700,fontSize:11}}>空き</span>}
@@ -1444,11 +1467,13 @@ export default function ShiftApp() {
                         background:wi%2===0?C.bg:C.surface,cursor:"pointer",
                         outline:editingSlot?.dk===dk&&editingSlot?.sl==="pm"?`2px solid ${C.accent}`:"none"}}>
                       {staffId
-                        ? <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,
+                        ? <span className="staff-badge" style={{display:"inline-block",padding:"2px 8px",borderRadius:6,
                             background:isManualPm?"#FEF9C3":pmColor.bg,
                             color:isManualPm?"#854D0E":pmColor.text,
                             fontWeight:700,fontSize:12,
-                            outline:isManualPm?`1px solid #D97706`:"none"}}>
+                            outline:isManualPm?`1px solid #D97706`:"none",
+                            "--print-bg":pmColor.bg, "--print-color":pmColor.text,
+                          }}>
                             {getName(staffId)}{isManualPm?"✎":""}
                           </span>
                         : <span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,background:C.dangerBg,color:C.danger,fontWeight:700,fontSize:11}}>空き</span>}
@@ -1460,6 +1485,76 @@ export default function ShiftApp() {
           ))}
         </div>
         </div> {/* end shift-print-area */}
+
+        {/* 希望提出状況 印刷エリア（画面では非表示、印刷時のみ表示） */}
+        <div id="avail-print-area" style={{marginTop:16,fontFamily:"'Hiragino Sans','Noto Sans JP',sans-serif"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:13,fontWeight:700,color:C.text}}>{year}年{month}月 希望提出状況</span>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+              {staffList.map(s=>{
+                const sc=STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
+                return <span key={s.id} style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:sc.bg,color:sc.text}}>{s.name}</span>;
+              })}
+            </div>
+          </div>
+          <div style={{border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
+            {/* 曜日ヘッダー */}
+            <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",background:C.accent}}>
+              <div/>
+              {["月","火","水","木","金"].map(l=>(
+                <div key={l} style={{textAlign:"center",padding:"5px 0",fontSize:11,fontWeight:700,color:"#fff"}}>{l}</div>
+              ))}
+            </div>
+            {weeks.map((week,wi)=>(
+              <div key={wi} style={{borderTop:`2px solid ${C.border}`}}>
+                {/* 日付行 */}
+                <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",background:"#F7F6F3"}}>
+                  <div/>
+                  {week.map((d,di)=>{
+                    const borderL=di>0?`1px solid ${C.border}`:"none";
+                    if(!d) return <div key={di} style={{background:"#EEECEA",borderLeft:borderL,minHeight:16}}/>;
+                    const dk=dateKey(d);
+                    const isH=holidays.has(dk);
+                    return <div key={dk} style={{textAlign:"center",padding:"2px",borderLeft:borderL,
+                      background:isH?"#F0EEE8":"#F7F6F3",fontSize:10,color:isH?"#B0A8A0":C.muted}}>
+                      {fmtDate(d)}{isH&&<span style={{fontSize:8,color:C.danger}}> 祝</span>}
+                    </div>;
+                  })}
+                </div>
+                {/* 午前行 */}
+                {["am","pm"].map(sl=>(
+                  <div key={sl} style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",borderTop:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",
+                      background:sl==="am"?C.am:C.pm,padding:"2px"}}>
+                      <span style={{fontSize:9,fontWeight:700,color:sl==="am"?C.amText:C.pmText}}>{sl==="am"?"午前":"午後"}</span>
+                    </div>
+                    {week.map((d,di)=>{
+                      const borderL=di>0?`1px solid ${C.border}`:"none";
+                      if(!d) return <div key={di} style={{background:"#EEECEA",borderLeft:borderL}}/>;
+                      const dk=dateKey(d);
+                      if(holidays.has(dk)) return <div key={dk} style={{background:"#F0EEE8",borderLeft:borderL,minHeight:28}}/>;
+                      const okStaff = staffList.filter(s=>availability[s.id]?.[dk]?.[sl]===true);
+                      return (
+                        <div key={dk+sl} style={{borderLeft:borderL,minHeight:28,padding:"2px 2px",
+                          background:wi%2===0?C.bg:C.surface,display:"flex",flexWrap:"wrap",gap:2,alignContent:"center"}}>
+                          {okStaff.length===0
+                            ? <span style={{fontSize:8,color:"#D1C9C2"}}>―</span>
+                            : okStaff.map(s=>{
+                                const sc=STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
+                                return <span key={s.id} style={{fontSize:9,fontWeight:700,
+                                  padding:"1px 4px",borderRadius:3,
+                                  background:sc.bg,color:sc.text}}>{s.name}</span>;
+                              })
+                          }
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   };
