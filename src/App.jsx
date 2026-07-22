@@ -1222,7 +1222,12 @@ export default function ShiftApp() {
       );
     };
 
-    const handlePrint = () => window.print();
+    const handlePrint = () => {
+      // シフト表印刷: submit-cal-printを確実に非表示に
+      const cal = document.getElementById("submit-cal-print");
+      if (cal) cal.style.display = "none";
+      window.print();
+    };
 
     return (
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -1232,8 +1237,7 @@ export default function ShiftApp() {
             body * { visibility: hidden; }
             #shift-print-area, #shift-print-area * { visibility: visible; }
             #shift-print-area { position:fixed; top:0; left:0; width:100%; height:100%; }
-            #submit-cal-print, #submit-cal-print * { visibility: visible; }
-            #submit-cal-print { position:fixed; top:0; left:0; width:100%; height:100%; }
+            #submit-cal-print { display: none !important; }
             .no-print { display: none !important; }
             .staff-badge { background: var(--print-bg) !important; color: var(--print-color) !important; outline: none !important; }
           }
@@ -1538,8 +1542,23 @@ export default function ShiftApp() {
 
           {/* 希望状況カレンダー印刷ボタン */}
           <button onClick={()=>{
+            // 一時的にシフト印刷CSSを上書きして希望状況を印刷
+            const style = document.createElement("style");
+            style.id = "__avail_print_style__";
+            style.textContent = `@media print {
+              #shift-print-area { display: none !important; visibility: hidden !important; }
+              #submit-cal-print, #submit-cal-print * { visibility: visible !important; }
+              #submit-cal-print { display: block !important; position:fixed; top:0; left:0; width:100%; height:100%; }
+            }`;
+            document.head.appendChild(style);
             const el = document.getElementById("submit-cal-print");
-            if(el){ el.style.display="block"; window.print(); setTimeout(()=>{ el.style.display="none"; },500); }
+            if (el) el.style.display = "block";
+            window.print();
+            setTimeout(()=>{
+              if (el) el.style.display = "none";
+              const s = document.getElementById("__avail_print_style__");
+              if (s) s.remove();
+            }, 500);
           }} style={{
             display:"flex",alignItems:"center",gap:8,
             padding:"10px 14px",borderRadius:10,cursor:"pointer",
