@@ -863,6 +863,22 @@ export default function ShiftApp() {
         }}>
           シフトを提出して確認 →
         </button>
+
+        {/* 全データリセット（管理者専用・目立たない場所に） */}
+        <div style={{marginTop:24,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+          <button onClick={()=>{
+            if(!window.confirm("保存されたデータをすべてリセットしてアプリを初期状態に戻しますか？\n（スタッフ設定・可能日入力・シフト案がすべて消えます）")) return;
+            localStorage.removeItem(LS_KEY);
+            localStorage.removeItem(LS_SUBMIT_KEY);
+            window.location.reload();
+          }} style={{
+            fontSize:11,color:C.muted,background:"none",
+            border:`1px solid ${C.border}`,borderRadius:8,
+            padding:"6px 14px",cursor:"pointer",
+          }}>
+            🔄 全データをリセット（管理者用）
+          </button>
+        </div>
       </div>
     );
   };
@@ -1251,16 +1267,7 @@ export default function ShiftApp() {
               background:C.accent,border:"none",
               borderRadius:8,padding:"6px 12px",cursor:"pointer",
             }}>🖨 シフト表</button>
-            <button onClick={()=>{
-              // 希望状況も一緒に印刷
-              document.getElementById("avail-print-area").style.display="block";
-              window.print();
-              setTimeout(()=>{ document.getElementById("avail-print-area").style.display="none"; },500);
-            }} style={{
-              fontSize:12,fontWeight:700,color:C.accent,
-              background:C.accentLight,border:`1px solid ${C.accent}`,
-              borderRadius:8,padding:"6px 12px",cursor:"pointer",
-            }}>🖨 ＋希望状況</button>
+
           </div>
         </div>
 
@@ -1604,9 +1611,20 @@ export default function ShiftApp() {
                 );
               })}
             </div>
-            <p style={{fontSize:11,color:C.muted,marginTop:8}}>
-              {submittedIds.length}/{staffList.length}人 提出済み
-            </p>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}>
+              <p style={{fontSize:11,color:C.muted}}>
+                {submittedIds.length}/{staffList.length}人 提出済み
+              </p>
+              <button onClick={()=>{
+                document.getElementById("avail-print-area").style.display="block";
+                window.print();
+                setTimeout(()=>{ document.getElementById("avail-print-area").style.display="none"; },500);
+              }} style={{
+                fontSize:11,fontWeight:700,color:"#166534",
+                background:"#F0FDF4",border:`1px solid #86EFAC`,
+                borderRadius:8,padding:"5px 12px",cursor:"pointer",
+              }}>🖨 希望状況を印刷</button>
+            </div>
           </div>
 
           <p style={{fontSize:14,fontWeight:700,color:C.text}}>あなたの名前を選んでください</p>
@@ -1828,16 +1846,7 @@ export default function ShiftApp() {
               background:appMode==="submit"?"#fff":"rgba(255,255,255,0.2)",
               color:appMode==="submit"?"#065F46":"#fff",
             }}>希望提出</button>
-            <button onClick={()=>{
-              if(!window.confirm("保存されたデータをすべてリセットしてアプリを初期状態に戻しますか？\n（スタッフ設定・可能日入力・シフト案がすべて消えます）")) return;
-              localStorage.removeItem(LS_KEY);
-              localStorage.removeItem(LS_SUBMIT_KEY);
-              window.location.reload();
-            }} style={{
-              padding:"4px 10px",borderRadius:20,border:"1px solid rgba(255,255,255,0.4)",
-              cursor:"pointer",fontSize:11,fontWeight:700,
-              background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",
-            }}>リセット</button>
+
           </div>
         </div>
         <h1 style={{color:"#fff",fontSize:19,fontWeight:700,letterSpacing:"0.03em"}}>
