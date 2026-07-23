@@ -1796,10 +1796,17 @@ export default function ShiftApp() {
       alert("この月の提出データがありません");
       return;
     }
+    // 全員分を完全上書き（未提出者は空に、提出済みは最新データに）
     const newAvail = {};
-    staffList.forEach(s => { newAvail[s.id] = monthSubs[s.id] || {}; });
+    staffList.forEach(s => { newAvail[s.id] = monthSubs[s.id] ? {...monthSubs[s.id]} : {}; });
     setAvailability(newAvail);
-    alert(`${Object.keys(monthSubs).length}人分の希望を読み込みました`);
+    const submitted = Object.keys(monthSubs).length;
+    const notYet = staffList.filter(s => !monthSubs[s.id]).map(s => s.name);
+    const msg = notYet.length > 0
+      ? `${submitted}人分の希望を読み込みました。
+未提出: ${notYet.join("、")}`
+      : `全${submitted}人分の希望を読み込みました`;
+    alert(msg);
   };
 
   return (
