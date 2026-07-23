@@ -369,7 +369,7 @@ export default function ShiftApp() {
   const [editingStaff, setEditingStaff] = useState(INITIAL_STAFF[0].id);
 
   // アプリモード: "manager"=管理者 / "submit"=希望提出
-  const [appMode, setAppMode] = useState("manager");
+  const [appMode, setAppMode] = useState("submit");
   // 希望提出モードのstate
   const [submitStaffId, setSubmitStaffId] = useState(null); // 選択中のスタッフ
   const [submitAvail, setSubmitAvail] = useState({});        // { dk: {am,pm} }
@@ -863,6 +863,65 @@ export default function ShiftApp() {
         }}>
           シフトを提出して確認 →
         </button>
+
+        {/* 希望状況カレンダー印刷（管理者用） */}
+        <button onClick={()=>{
+          // 管理者カレンダーを印刷用HTMLとして生成
+          const DOW_LABELS = ["月","火","水","木","金"];
+          const COLORS = {A:"#DBEAFE|#1D4ED8",B:"#FCE7F3|#9D174D",C:"#D1FAE5|#065F46",D:"#FEF3C7|#92400E",E:"#EDE9FE|#5B21B6",F:"#FFE4E6|#9F1239",G:"#ECFDF5|#064E3B",H:"#FFF7ED|#C2410C",I:"#F0F9FF|#0369A1"};
+          const getColor = (id) => { const c=(COLORS[id]||"#eee|#333").split("|"); return {bg:c[0],text:c[1]}; };
+          let html = `<div style="font-family:'Hiragino Sans','Noto Sans JP',sans-serif;padding:0">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <span style="font-size:14px;font-weight:700">${year}年${month}月 希望状況</span>
+              <span style="font-size:11px;color:#888">${weekdays.length}日 ${weekdays.length*2}コマ</span>
+            </div>
+            <div style="border:1px solid #ddd;border-radius:8px;overflow:hidden">
+              <div style="display:grid;grid-template-columns:44px repeat(5,1fr);background:#3B6E8F">
+                <div></div>
+                ${DOW_LABELS.map(l=>`<div style="text-align:center;padding:5px 0;font-size:11px;font-weight:700;color:#fff">${l}</div>`).join('')}
+              </div>`;
+          weeks.forEach((week,wi)=>{
+            html += `<div style="border-top:2px solid #ddd">`;
+            // 日付行
+            html += `<div style="display:grid;grid-template-columns:44px repeat(5,1fr);background:#F7F6F3"><div></div>`;
+            week.forEach((d,di)=>{
+              const bl = di>0?"border-left:1px solid #ddd;":"";
+              if(!d){html+=`<div style="${bl}background:#EEECEA;min-height:16px"></div>`;return;}
+              const dk=dateKey(d);
+              const isH=holidays.has(dk);
+              html+=`<div style="${bl}text-align:center;padding:2px;font-size:10px;background:${isH?"#F0EEE8":"#F7F6F3"};color:${isH?"#B0A8A0":"#7A7570"}">${fmtDate(d)}${isH?" 祝":""}</div>`;
+            });
+            html+=`</div>`;
+            // 午前・午後行
+            ["am","pm"].forEach(sl=>{
+              const slLabel = sl==="am"?"午前":"午後";
+              const slBg = sl==="am"?"#E8F5E9":"#FFF8E1";
+              const slColor = sl==="am"?"#2E7D32":"#E65100";
+              html+=`<div style="display:grid;grid-template-columns:44px repeat(5,1fr);border-top:1px solid #ddd">`;
+              html+=`<div style="display:flex;align-items:center;justify-content:center;background:${slBg}"><span style="font-size:10px;font-weight:700;color:${slColor}">${slLabel}</span></div>`;
+              week.forEach((d,di)=>{
+                const bl = di>0?"border-left:1px solid #ddd;":"";
+                if(!d){html+=`<div style="${bl}background:#EEECEA"></div>`;return;}
+                const dk=dateKey(d);
+                if(holidays.has(dk)){html+=`<div style="${bl}background:#F0EEE8;min-height:32px"></div>`;return;}
+                const okStaff=staffList.filter(s=>availability[s.id]?.[dk]?.[sl]===true);
+                const badges=okStaff.map(s=>{const c=getColor(s.id);return `<span style="font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:${c.bg};color:${c.text}">${s.name}</span>`;}).join('');
+                html+=`<div style="${bl}min-height:32px;padding:2px 3px;display:flex;flex-wrap:wrap;gap:2px;align-content:center;background:${wi%2===0?"#F8F7F4":"#fff"}">${badges||'<span style="font-size:8px;color:#D1C9C2">―</span>'}</div>`;
+              });
+              html+=`</div>`;
+            });
+            html+=`</div>`;
+          });
+          html+=`</div></div>`;
+          const w=window.open("","_blank","width=1000,height=750");
+          w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>@page{size:A4 landscape;margin:10mm}body{margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}*{box-sizing:border-box}</style></head><body>${html}<script>window.onload=function(){window.print()}<\/script></body></html>`);
+          w.document.close();
+        }} style={{
+          display:"flex",alignItems:"center",gap:8,
+          padding:"11px 14px",borderRadius:12,cursor:"pointer",
+          background:"#F0FDF4",color:"#166534",
+          border:`1px solid #86EFAC`,fontWeight:700,fontSize:13,
+        }}>🖨 希望状況カレンダーを印刷</button>
 
         {/* 全データリセット（管理者専用・目立たない場所に） */}
         <div style={{marginTop:24,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
@@ -1540,34 +1599,6 @@ export default function ShiftApp() {
             </p>
           </div>
 
-          {/* 希望状況カレンダー印刷ボタン */}
-          <button onClick={()=>{
-            // 一時的にシフト印刷CSSを上書きして希望状況を印刷
-            const style = document.createElement("style");
-            style.id = "__avail_print_style__";
-            style.textContent = `@media print {
-              #shift-print-area { display: none !important; visibility: hidden !important; }
-              #submit-cal-print, #submit-cal-print * { visibility: visible !important; }
-              #submit-cal-print { display: block !important; position:fixed; top:0; left:0; width:100%; height:100%; }
-            }`;
-            document.head.appendChild(style);
-            const el = document.getElementById("submit-cal-print");
-            if (el) el.style.display = "block";
-            window.print();
-            setTimeout(()=>{
-              if (el) el.style.display = "none";
-              const s = document.getElementById("__avail_print_style__");
-              if (s) s.remove();
-            }, 500);
-          }} style={{
-            display:"flex",alignItems:"center",gap:8,
-            padding:"10px 14px",borderRadius:10,cursor:"pointer",
-            background:"#F0FDF4",color:"#166534",
-            border:`1px solid #86EFAC`,fontWeight:700,fontSize:13,
-          }}>
-            🖨 希望状況カレンダーを印刷
-          </button>
-
           <p style={{fontSize:14,fontWeight:700,color:C.text}}>あなたの名前を選んでください</p>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {staffList.map(s=>{
@@ -1625,75 +1656,9 @@ export default function ShiftApp() {
       setSubmitDone(true);
     };
 
-    // 印刷用カレンダー（hidden div、印刷時だけ表示）
-    const AvailPrintCal = () => (
-      <div id="submit-cal-print" style={{display:"none",fontFamily:"'Hiragino Sans','Noto Sans JP',sans-serif"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <span style={{fontSize:14,fontWeight:700}}>{year}年{month}月 希望状況</span>
-          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-            {staffList.map(s=>{
-              const sc=STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
-              return <span key={s.id} style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:sc.bg,color:sc.text}}>{s.name}</span>;
-            })}
-          </div>
-        </div>
-        <div style={{border:`1px solid #ddd`,borderRadius:8,overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",background:C.accent}}>
-            <div/>
-            {["月","火","水","木","金"].map(l=>(
-              <div key={l} style={{textAlign:"center",padding:"5px 0",fontSize:11,fontWeight:700,color:"#fff"}}>{l}</div>
-            ))}
-          </div>
-          {weeks.map((week,wi)=>(
-            <div key={wi} style={{borderTop:`2px solid #ddd`}}>
-              <div style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",background:"#F7F6F3"}}>
-                <div/>
-                {week.map((d,di)=>{
-                  if(!d) return <div key={di} style={{background:"#EEECEA",borderLeft:di>0?"1px solid #ddd":"none",minHeight:16}}/>;
-                  const dk=dateKey(d);
-                  const isH=holidays.has(dk);
-                  return <div key={dk} style={{textAlign:"center",padding:"2px",borderLeft:di>0?"1px solid #ddd":"none",
-                    background:isH?"#F0EEE8":"#F7F6F3",fontSize:10,color:isH?"#B0A8A0":"#7A7570"}}>
-                    {fmtDate(d)}{isH&&<span style={{fontSize:8,color:"#B91C1C"}}> 祝</span>}
-                  </div>;
-                })}
-              </div>
-              {["am","pm"].map(sl=>(
-                <div key={sl} style={{display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",borderTop:"1px solid #ddd"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",
-                    background:sl==="am"?C.am:C.pm,padding:"2px"}}>
-                    <span style={{fontSize:9,fontWeight:700,color:sl==="am"?C.amText:C.pmText}}>{sl==="am"?"午前":"午後"}</span>
-                  </div>
-                  {week.map((d,di)=>{
-                    const borderL=di>0?"1px solid #ddd":"none";
-                    if(!d) return <div key={di} style={{background:"#EEECEA",borderLeft:borderL}}/>;
-                    const dk=dateKey(d);
-                    if(holidays.has(dk)) return <div key={dk} style={{background:"#F0EEE8",borderLeft:borderL,minHeight:32}}/>;
-                    const okStaff=staffList.filter(s=>availability[s.id]?.[dk]?.[sl]===true);
-                    return (
-                      <div key={dk+sl} style={{borderLeft:borderL,minHeight:32,padding:"2px 3px",
-                        background:wi%2===0?C.bg:"#fff",display:"flex",flexWrap:"wrap",gap:2,alignContent:"center"}}>
-                        {okStaff.length===0
-                          ? <span style={{fontSize:8,color:"#D1C9C2"}}>―</span>
-                          : okStaff.map(s=>{
-                              const sc=STAFF_COLORS[s.id]||{bg:"#eee",text:"#333"};
-                              return <span key={s.id} style={{fontSize:10,fontWeight:700,
-                                padding:"1px 5px",borderRadius:3,background:sc.bg,color:sc.text}}>{s.name}</span>;
-                            })}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
 
     return (
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <AvailPrintCal/>
         {/* ヘッダー */}
         <div style={{display:"flex",alignItems:"center",gap:10,
           background:sc.bg,borderRadius:12,padding:"12px 16px",
@@ -1800,7 +1765,7 @@ export default function ShiftApp() {
                     <button key={dk+"-pm"} onClick={()=>toggleSubmitSlot(dk,"pm")} style={{
                       minHeight:40,padding:"2px",cursor:"pointer",textAlign:"center",
                       border:"none",borderLeft:borderL,
-                      background:on?sc.bg:wi%2===0?C.bg:C.surface,
+                      background:on?sc.bg:C.surface,
                       color:on?sc.text:C.muted,
                       fontWeight:on?700:400,fontSize:14,
                     }}>{on?"○":"―"}</button>
